@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 
+	"github.com/boltdb/bolt"
 	"github.com/docker/swarmkit/agent/exec"
 	"github.com/docker/swarmkit/api"
 	"github.com/docker/swarmkit/picker"
@@ -26,11 +27,21 @@ type Config struct {
 
 	// NotifyRoleChange channel receives new roles from session messages.
 	NotifyRoleChange chan<- api.NodeRole
+
+	DB *bolt.DB
 }
 
 func (c *Config) validate() error {
 	if c.Conn == nil {
 		return fmt.Errorf("config: Connection is required")
+	}
+
+	if c.SecurityConfig == nil {
+		return fmt.Errorf("agent: SecurityConfig required")
+	}
+
+	if c.DB == nil {
+		return fmt.Errorf("agent: database required")
 	}
 
 	return nil
