@@ -212,6 +212,10 @@ func (n *Node) run(ctx context.Context) (err error) {
 	}
 
 	taskDBPath := filepath.Join(n.config.StateDir, "worker/tasks.db")
+	if err := os.MkdirAll(filepath.Dir(taskDBPath), 0777); err != nil {
+		return err
+	}
+
 	db, err := bolt.Open(taskDBPath, 0666, nil)
 	if err != nil {
 		return err
