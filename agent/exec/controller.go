@@ -167,6 +167,7 @@ func Do(ctx context.Context, task *api.Task, ctlr Controller) (*api.TaskStatus, 
 	defer func() {
 		if task.Status.State != status.State {
 			log.G(ctx).WithField("state.transition", fmt.Sprintf("%v->%v", task.Status.State, status.State)).
+				WithField("state.desired", task.DesiredState).
 				Info("state changed")
 		}
 	}()
@@ -196,61 +197,8 @@ func Do(ctx context.Context, task *api.Task, ctlr Controller) (*api.TaskStatus, 
 		}
 	}()
 
-	switch task.DesiredState {
-	case api.TaskStateNew, api.TaskStateAllocated,
-		api.TaskStateAssigned, api.TaskStateAccepted,
-		api.TaskStatePreparing, api.TaskStateReady,
-		api.TaskStateStarting, api.TaskStateRunning,
-		api.TaskStateCompleted, api.TaskStateFailed,
-		api.TaskStateRejected:
-
-		if task.DesiredState < status.State {
-			// do not yet proceed. the desired state is less than the current
-			// state.
-			return noop()
-		}
-
-		switch status.State {
-		case api.TaskStateNew, api.TaskStateAllocated,
-			api.TaskStateAssigned:
-			return transition(api.TaskStateAccepted, "accepted")
-		case api.TaskStateAccepted:
-			return transition(api.TaskStatePreparing, "preparing")
-		case api.TaskStatePreparing:
-			if err := ctlr.Prepare(ctx); err != nil && err != ErrTaskPrepared {
-				return fatal(err)
-			}
-
-			return transition(api.TaskStateReady, "prepared")
-		case api.TaskStateReady:
-			return transition(api.TaskStateStarting, "starting")
-		case api.TaskStateStarting:
-			if err := ctlr.Start(ctx); err != nil && err != ErrTaskStarted {
-				return fatal(err)
-			}
-
-			return transition(api.TaskStateRunning, "started")
-		case api.TaskStateRunning:
-			if err := ctlr.Wait(ctx); err != nil {
-				// Wait should only proceed to failed if there is a terminal
-				// error. The only two conditions when this happens are when we
-				// get an exit code or when the container doesn't exist.
-				switch err := err.(type) {
-				case ExitCoder:
-					return transition(api.TaskStateFailed, "failed")
-				default:
-					// pursuant to the above comment, report fatal, but wrap as
-					// temporary.
-					return fatal(MakeTemporary(err))
-				}
-			}
-
-			return transition(api.TaskStateCompleted, "finished")
-		default: // terminal states
-			return noop()
-		}
-	case api.TaskStateShutdown:
-		if status.State >= api.TaskStateShutdown {
+	if task.DesiredState == api.TaskStateShutdown {
+		if status.State >= api.TaskStateCompleted {
 			return noop()
 		}
 
@@ -259,6 +207,59 @@ func Do(ctx context.Context, task *api.Task, ctlr Controller) (*api.TaskStatus, 
 		}
 
 		return transition(api.TaskStateShutdown, "shutdown")
+	}
+
+	if status.State > task.DesiredState {
+		return noop() // way beyond desired state, pause
+	}
+
+	// the following states may proceed past desired state.
+	switch status.State {
+	case api.TaskStatePreparing:
+		if err := ctlr.Prepare(ctx); err != nil && err != ErrTaskPrepared {
+			return fatal(err)
+		}
+
+		return transition(api.TaskStateReady, "prepared")
+	case api.TaskStateStarting:
+		if err := ctlr.Start(ctx); err != nil && err != ErrTaskStarted {
+			return fatal(err)
+		}
+
+		return transition(api.TaskStateRunning, "started")
+	case api.TaskStateRunning:
+		if err := ctlr.Wait(ctx); err != nil {
+			// Wait should only proceed to failed if there is a terminal
+			// error. The only two conditions when this happens are when we
+			// get an exit code or when the container doesn't exist.
+			switch err := err.(type) {
+			case ExitCoder:
+				return transition(api.TaskStateFailed, "failed")
+			default:
+				// pursuant to the above comment, report fatal, but wrap as
+				// temporary.
+				return fatal(MakeTemporary(err))
+			}
+		}
+
+		return transition(api.TaskStateCompleted, "finished")
+	}
+
+	// The following represent "pause" states. We can only proceed when the
+	// desired state is beyond our current state.
+	if status.State >= task.DesiredState {
+		return noop()
+	}
+
+	switch status.State {
+	case api.TaskStateNew, api.TaskStateAllocated, api.TaskStateAssigned:
+		return transition(api.TaskStateAccepted, "accepted")
+	case api.TaskStateAccepted:
+		return transition(api.TaskStatePreparing, "preparing")
+	case api.TaskStateReady:
+		return transition(api.TaskStateStarting, "starting")
+	default: // terminal states
+		return noop()
 	}
 
 	panic("not reachable")
