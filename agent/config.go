@@ -30,8 +30,6 @@ type Config struct {
 
 	// NotifyRoleChange channel receives new roles from session messages.
 	NotifyRoleChange chan<- api.NodeRole
-
-	DB *bolt.DB
 }
 
 func (c *Config) validate() error {

@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/docker/swarm-v2/api"
-	"github.com/docker/swarm-v2/log"
+	"github.com/docker/swarmkit/api"
+	"github.com/docker/swarmkit/log"
 	"golang.org/x/net/context"
 )
 

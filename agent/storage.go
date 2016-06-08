@@ -4,7 +4,7 @@ import (
 	"bytes"
 
 	"github.com/boltdb/bolt"
-	"github.com/docker/swarm-v2/api"
+	"github.com/docker/swarmkit/api"
 	"github.com/gogo/protobuf/proto"
 )
 
